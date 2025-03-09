@@ -9,6 +9,7 @@ from playwright.async_api import async_playwright, TimeoutError as PlaywrightTim
 import os
 import base64
 import json
+import time
 load_dotenv()
 
 app = FastAPI()
@@ -16,6 +17,8 @@ tasks = {}  # In-memory storage for tasks (task_id -> status)
 client = OpenAI()
 
 async def run_test_in_background(task_id: str, url: str):
+    # Note current time in SGT timezone in the format of YYYY-MM-DD HH:MM:SS
+    starting_time = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
     os.makedirs("screenshots", exist_ok=True)  # Ensure the screenshots directory exists
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
@@ -47,7 +50,7 @@ async def run_test_in_background(task_id: str, url: str):
                                     "description": "Explain how to fix the issue if it failed (in the context it was a failed URL upload), else put as 'No solution needed.'"
                                 }
                             },
-                            "required": ["status", "explanation", "reason"]
+                            "required": ["status", "explanation", "solution"]
                         }
                     }
                 }
@@ -79,16 +82,26 @@ async def run_test_in_background(task_id: str, url: str):
                 )
                 arguments_json = response.choices[0].message.tool_calls[0].function.arguments
                 output = json.loads(arguments_json)
-                # E.g. Format: {"status": True, "explanation": "It can convert!", "reason": "No solution needed."}
                 conversion_result = {
                     key: output.get(key)
-                    for key in ["status", "explanation", "reason"]
+                    for key in ["status","explanation", "solution"]
                 }
+                ending_time = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+                final_output = {
+                    "test_id": task_id,
+                    "video_url": url,
+                    "success_status": conversion_result["status"],
+                    "starting_time": starting_time,
+                    "screenshot_path": "/image/" + task_id,
+                    "ending_time": ending_time,
+                    "ai_analysis": conversion_result
+                }
+                tasks[task_id] = {"status": "done", "details": final_output}
             except Exception as e:
                 print("Error during image analysis:", e)
-        
+            
         page.on("dialog", on_dialog)
-        tasks[task_id] = {"status": "Success", "details": {"screenshot_path": f"screenshots/{task_id}.png"}}
+        # tasks[task_id] = {"status": "Success", "details": {"screenshot_path": f"screenshots/{task_id}.png"}}
         await page.click("text=URL")
         print(f"Clicked on URL button for task_id: {task_id}")
         try:
