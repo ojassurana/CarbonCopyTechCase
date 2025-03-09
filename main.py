@@ -1,4 +1,5 @@
-from fastapi import FastAPI, BackgroundTasks
+from fastapi import FastAPI, BackgroundTasks, HTTPException
+from fastapi.responses import FileResponse
 import uvicorn
 import asyncio
 import random
@@ -29,10 +30,9 @@ async def run_test_in_background(task_id: str, url: str):
             print(f"Screenshot saved at {screenshot_path} for task_id: {task_id}")
         
         page.on("dialog", on_dialog)
-        
+        tasks[task_id] = {"status": "Success", "details": {"screenshot_path": f"screenshots/{task_id}.png"}}
         await page.click("text=URL")
         print(f"Clicked on URL button for task_id: {task_id}")
-        
         try:
             await page.wait_for_event("dialog", timeout=20000)
         except PlaywrightTimeoutError:
@@ -60,6 +60,15 @@ async def get_result(task_id: str):
     if not task or task["status"] == "pending":
         return {"status": "pending"}
     return {"status": task["status"], "details": task.get("details", {})}
+
+
+@app.get("/image/{task_id}")
+async def get_image(task_id: str):
+    screenshot_path = f"screenshots/{task_id}.png"
+    if not os.path.exists(screenshot_path):
+        raise HTTPException(status_code=404, detail="Image not found")
+    return FileResponse(screenshot_path, media_type="image/png")
+
 
 
 if __name__ == "__main__":
