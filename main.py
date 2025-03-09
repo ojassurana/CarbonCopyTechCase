@@ -79,6 +79,7 @@ async def run_test_in_background(task_id: str, url: str):
                 )
                 arguments_json = response.choices[0].message.tool_calls[0].function.arguments
                 output = json.loads(arguments_json)
+                # E.g. Format: {"status": True, "explanation": "It can convert!", "reason": "No solution needed."}
                 conversion_result = {
                     key: output.get(key)
                     for key in ["status", "explanation", "reason"]
@@ -100,14 +101,13 @@ async def run_test_in_background(task_id: str, url: str):
 
 # For the user to submit URL for testing. 
 @app.get("/test/{task_id}")
-async def start_test(task_id: str, background_tasks: BackgroundTasks):
-    # Embed the YouTube URL directly here.
-    youtube_url = "https://www.youtube.com/watch?v=Xlaioa4Cg1U"  # Replace with your desired YouTube URL
+async def start_test(task_id: str, url: str, background_tasks: BackgroundTasks):
     if task_id in tasks:
         return {"status": "Task ID Already exists"}
     tasks[task_id] = {"status": "pending"}
-    background_tasks.add_task(run_test_in_background, task_id, youtube_url)
+    background_tasks.add_task(run_test_in_background, task_id, url)
     return {"status": "pending"}
+
 
 
 # For the user to retrieve test results
