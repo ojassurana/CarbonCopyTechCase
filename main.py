@@ -3,15 +3,17 @@ from fastapi.responses import FileResponse
 import uvicorn
 import asyncio
 import random
-import openai
+from openai import OpenAI
 from dotenv import load_dotenv
 from playwright.async_api import async_playwright, TimeoutError as PlaywrightTimeoutError
 import os
+import base64
+import json
 load_dotenv()
 
 app = FastAPI()
 tasks = {}  # In-memory storage for tasks (task_id -> status)
-
+client = OpenAI()
 
 async def run_test_in_background(task_id: str, url: str):
     os.makedirs("screenshots", exist_ok=True)  # Ensure the screenshots directory exists
@@ -23,11 +25,66 @@ async def run_test_in_background(task_id: str, url: str):
         await page.wait_for_load_state("networkidle")
         
         async def on_dialog(dialog):
+            custom_functions = [
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "Extract_Conversion_Result",
+                        "description": "Extracts the video conversion result including status, explanation, and reason. Returns an object with 'status' (boolean), 'explanation' (string), and 'reason' (string).",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "status": {
+                                    "type": "boolean",
+                                    "description": "Tells whether the video conversion succeeded or didn't."
+                                },
+                                "explanation": {
+                                    "type": "string",
+                                    "description": "If it failed, explain why, else put as 'It can convert!'"
+                                },
+                                "solution": {
+                                    "type": "string",
+                                    "description": "Explain how to fix the issue if it failed (in the context it was a failed URL upload), else put as 'No solution needed.'"
+                                }
+                            },
+                            "required": ["status", "explanation", "reason"]
+                        }
+                    }
+                }
+            ]
             await dialog.accept(url)
             await page.wait_for_timeout(10000)
             screenshot_path = f"screenshots/{task_id}.png"
             await page.screenshot(path=screenshot_path)
             print(f"Screenshot saved at {screenshot_path} for task_id: {task_id}")
+            
+            with open(screenshot_path, "rb") as image_file:
+                base64_image = base64.b64encode(image_file.read()).decode("utf-8")
+            
+            data_url = f"data:image/png;base64,{base64_image}"
+            
+            try:
+                response = client.chat.completions.create(
+                    model="gpt-4o-mini",
+                    messages=[
+                        {
+                            "role": "user",
+                            "content": [
+                                {"type": "text", "text": "Analyse the test result of this video conversion website"},
+                                {"type": "image_url", "image_url": {"url": data_url}},
+                            ],
+                        }
+                    ],
+                    tools=custom_functions,
+                )
+                arguments_json = response.choices[0].message.tool_calls[0].function.arguments
+                output = json.loads(arguments_json)
+                conversion_result = {
+                    key: output.get(key)
+                    for key in ["status", "explanation", "reason"]
+                }
+            except Exception as e:
+                print("Error during image analysis:", e)
         
         page.on("dialog", on_dialog)
         tasks[task_id] = {"status": "Success", "details": {"screenshot_path": f"screenshots/{task_id}.png"}}
