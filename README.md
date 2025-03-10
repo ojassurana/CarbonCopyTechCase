@@ -71,7 +71,7 @@ This is a RESTful API built with FastAPI to test the video conversion functional
 - Waits 10 seconds, takes a screenshot, and analyzes it using OpenAI’s `gpt-4o-mini` to determine the conversion result.
 
 3. **Result Storage**:
-- Stores the test status, details, and screenshot path in memory (`tasks` dictionary).
+- Stores the test status, details, and screenshot path in memory.
 
 4. **Result Retrieval**:
 - Use `/result/{task_id}` to get the test outcome, including AI-generated analysis.
